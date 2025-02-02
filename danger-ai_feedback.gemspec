@@ -9,9 +9,9 @@ Gem::Specification.new do |spec|
   spec.version       = AiFeedback::VERSION
   spec.authors       = ["Maximilian Lemberg"]
   spec.email         = ["maximilian@appswithlove.com"]
-  spec.description   = "A short description of danger-ai_feedback."
-  spec.summary       = "A longer description of danger-ai_feedback."
-  spec.homepage      = "https://github.com/Maximilian Lemberg/danger-ai_feedback"
+  spec.description   = "Analyze GitLab pipelines for failed jobs and provide AI-generated feedback."
+  spec.summary       = "A Danger plugin that integrates with GitLab CI/CD and OpenAI to analyze pipeline failures."
+  spec.homepage      = "https://github.com/maximilianlemberg-awl/danger-pr-ai_feedback"
   spec.license       = "MIT"
 
   spec.files         = `git ls-files`.split($/)

@@ -1,46 +1,78 @@
 # frozen_string_literal: true
 
 require File.expand_path("spec_helper", __dir__)
+require "json"
 
 module Danger
   describe Danger::DangerAiFeedback do
-    it "should be a plugin" do
-      expect(Danger::DangerAiFeedback.new(nil)).to be_a Danger::Plugin
-    end
-
-    #
-    # You should test your custom attributes and methods here
-    #
     describe "with Dangerfile" do
       before do
         @dangerfile = testing_dangerfile
-        @my_plugin = @dangerfile.ai_feedback
-
-        # mock the PR data
-        # you can then use this, eg. github.pr_author, later in the spec
-        json = File.read("#{File.dirname(__FILE__)}/support/fixtures/github_pr.json") # example json: `curl https://api.github.com/repos/danger/danger-plugin-template/pulls/18 > github_pr.json`
-        allow(@my_plugin.github).to receive(:pr_json).and_return(json)
+        @ai_feedback = @dangerfile.ai_feedback
       end
 
-      # Some examples for writing tests
-      # You should replace these with your own.
-
-      it "Warns on a monday" do
-        monday_date = Date.parse("2016-07-11")
-        allow(Date).to receive(:today).and_return monday_date
-
-        @my_plugin.warn_on_mondays
-
-        expect(@dangerfile.status_report[:warnings]).to eq(["Trying to merge code on a Monday"])
+      it "should be a Danger plugin" do
+        expect(@ai_feedback).to be_a Danger::Plugin
       end
 
-      it "Does nothing on a tuesday" do
-        monday_date = Date.parse("2016-07-12")
-        allow(Date).to receive(:today).and_return monday_date
+      context "when required environment variables are missing" do
+        it "fails when any required environment variable is missing" do
+          allow(ENV).to receive(:[]).and_return(nil) # Simulate missing variables
+          
+          expect { @ai_feedback.analyze_pipeline }.to raise_error(RuntimeError, /Missing environment variables/)
+        end
+      end
 
-        @my_plugin.warn_on_mondays
+      context "when no failed jobs exist" do
+        before do
+          allow(@ai_feedback).to receive(:api_get).and_return({ "id" => 123 }.to_json)
+          allow(@ai_feedback).to receive(:api_get).and_return([].to_json) # No failed jobs
+        end
 
-        expect(@dangerfile.status_report[:warnings]).to eq([])
+        it "outputs a success message when no jobs failed" do
+          expect(@ai_feedback).to receive(:message).with("✅ No failed jobs found!")
+          @ai_feedback.analyze_pipeline
+        end
+      end
+
+      context "when failed jobs exist" do
+        let(:failed_jobs) do
+          [
+            { "id" => 1, "name" => "test-job", "status" => "failed" }
+          ]
+        end
+
+        before do
+          allow(@ai_feedback).to receive(:api_get).and_return({ "id" => 123 }.to_json)
+          allow(@ai_feedback).to receive(:api_get).and_return(failed_jobs.to_json)
+          allow(@ai_feedback).to receive(:api_get).and_return("Fake log line\nAnother log line")
+          allow(@ai_feedback).to receive(:post_request).and_return({ "choices" => [{ "message" => { "content" => "Suggested Fix: Do X" } }] }.to_json)
+        end
+
+        it "fetches logs and sends them to OpenAI" do
+          expect(@ai_feedback).to receive(:api_get).at_least(:once)
+          expect(@ai_feedback).to receive(:post_request).at_least(:once)
+          @ai_feedback.analyze_pipeline
+        end
+
+        it "fails with a message when failed jobs are found" do
+          expect(@ai_feedback).to receive(:fail).with(/🚨 Failing Pipeline detected/)
+          @ai_feedback.analyze_pipeline
+        end
+      end
+
+      context "when OpenAI response is empty" do
+        before do
+          allow(@ai_feedback).to receive(:api_get).and_return({ "id" => 123 }.to_json)
+          allow(@ai_feedback).to receive(:api_get).and_return([{ "id" => 1, "name" => "test-job", "status" => "failed" }].to_json)
+          allow(@ai_feedback).to receive(:api_get).and_return("Fake log line")
+          allow(@ai_feedback).to receive(:post_request).and_return("")
+        end
+
+        it "fails gracefully when OpenAI does not return a response" do
+          expect(@ai_feedback).to receive(:fail).with(/No response from ChatGPT/)
+          @ai_feedback.analyze_pipeline
+        end
       end
     end
   end
